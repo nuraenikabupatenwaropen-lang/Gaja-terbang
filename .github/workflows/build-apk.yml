@@ -1,0 +1,52 @@
+name: Build APK
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [pl-projek, jaga-anak]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ekstrak ZIP
+        run: |
+          mkdir -p "work/${{ matrix.app }}"
+          unzip -q "${{ matrix.app }}.zip" -d "work/${{ matrix.app }}"
+          SETTINGS=$(find "work/${{ matrix.app }}" -maxdepth 3 -name settings.gradle | head -n 1)
+          if [ -z "$SETTINGS" ]; then echo "settings.gradle tidak ditemukan di ZIP"; exit 1; fi
+          echo "ROOT=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Siapkan Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" > /dev/null || true
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build APK
+        run: cd "$ROOT" && gradle assembleDebug --no-daemon --stacktrace
+      - name: Ambil APK
+        run: cp "$ROOT/app/build/outputs/apk/debug/app-debug.apk" "${{ matrix.app }}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}
+          path: ${{ matrix.app }}.apk
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: apks
+          merge-multiple: true
+      - name: Buat release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "apk-${{ github.run_number }}" apks/*.apk --repo "${{ github.repository }}" --title "APK build ${{ github.run_number }}" --notes "pl-projek.apk dan jaga-anak.apk"
