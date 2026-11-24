@@ -16,8 +16,8 @@ jobs:
         run: |
           mkdir -p "work/${{ matrix.app }}"
           unzip -q "${{ matrix.app }}.zip" -d "work/${{ matrix.app }}"
-          SETTINGS=$(find "work/${{ matrix.app }}" -maxdepth 3 -name settings.gradle | head -n 1)
-          if [ -z "$SETTINGS" ]; then echo "settings.gradle tidak ditemukan di ZIP"; exit 1; fi
+          SETTINGS=$(find "work/${{ matrix.app }}" -maxdepth 6 \( -name settings.gradle -o -name settings.gradle.kts \) | head -n 1)
+          if [ -z "$SETTINGS" ]; then echo "settings.gradle / settings.gradle.kts tidak ditemukan di ZIP"; exit 1; fi
           echo "ROOT=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with:
@@ -28,10 +28,17 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" > /dev/null || true
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
+      - name: Beri izin gradlew
+        run: |
+          if [ -f "$ROOT/gradlew" ]; then chmod +x "$ROOT/gradlew"; fi
       - name: Build APK
-        run: cd "$ROOT" && gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          cd "$ROOT"
+          if [ -f "gradlew" ]; then
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          else
+            gradle assembleDebug --no-daemon --stacktrace
+          fi
       - name: Ambil APK
         run: cp "$ROOT/app/build/outputs/apk/debug/app-debug.apk" "${{ matrix.app }}.apk"
       - uses: actions/upload-artifact@v4
