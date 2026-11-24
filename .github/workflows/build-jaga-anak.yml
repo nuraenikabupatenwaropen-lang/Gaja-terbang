@@ -1,0 +1,36 @@
+name: Build Jaga Anak
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ekstrak ZIP
+        run: |
+          mkdir -p work
+          unzip -q app.zip -d work
+          SETTINGS=$(find work -maxdepth 3 -name settings.gradle | head -n 1)
+          if [ -z "$SETTINGS" ]; then echo "settings.gradle tidak ditemukan di ZIP"; exit 1; fi
+          echo "ROOT=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Siapkan Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" > /dev/null || true
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build APK
+        run: cd "$ROOT" && gradle assembleDebug --no-daemon --stacktrace
+      - name: Ambil APK
+        run: cp "$ROOT/app/build/outputs/apk/debug/app-debug.apk" app.apk
+      - name: Buat release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "jaga-${{ github.run_number }}" app.apk --repo "${{ github.repository }}" --title "Jaga Anak build ${{ github.run_number }}" --notes "APK Jaga Anak dari fitur Generate APK"
