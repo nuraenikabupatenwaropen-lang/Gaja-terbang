@@ -34,13 +34,38 @@ jobs:
         run: |
           if [ -f "$ROOT/gradlew" ]; then chmod +x "$ROOT/gradlew"; fi
       - name: Build APK
+        id: build_apk
         run: |
+          set -o pipefail
           cd "$ROOT"
           if [ -f "gradlew" ]; then
-            ./gradlew assembleDebug --no-daemon --stacktrace
+            ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           else
-            gradle assembleDebug --no-daemon --stacktrace
+            gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           fi
+      - name: Ringkasan diagnosis build
+        if: failure()
+        run: |
+          {
+            echo '## Diagnosis build APK'
+            echo ''
+            if [ -f build.log ]; then
+              echo 'Cuplikan baris error dari build.log:'
+              echo '```text'
+              grep -inE -B 3 -A 5 'error:|What went wrong|FAILURE:|Could not|Execution failed|A problem occurred|Unresolved reference|e: ' build.log | tail -n 100 || tail -n 100 build.log
+              echo '```'
+            else
+              echo 'build.log belum dibuat. Kegagalan kemungkinan terjadi sebelum perintah Gradle dijalankan (misalnya ekstraksi ZIP atau persiapan SDK). Buka log langkah yang gagal.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Unggah log diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-diagnostics
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Ambil APK
         run: cp "$ROOT/app/build/outputs/apk/debug/app-debug.apk" "${{ matrix.app }}.apk"
       - uses: actions/upload-artifact@v4
